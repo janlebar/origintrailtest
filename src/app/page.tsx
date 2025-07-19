@@ -123,6 +123,10 @@ export default function EthereumCrawler() {
 
   const balanceForm = useForm<z.infer<typeof balanceFormSchema>>({
     resolver: zodResolver(balanceFormSchema),
+    defaultValues: {
+      walletAddress: "",
+      date: new Date(),
+    },
   });
 
   // Funkcija za obdelavo oddaje obrazca za iskanje transakcij
@@ -162,8 +166,19 @@ export default function EthereumCrawler() {
         }),
       });
 
-      if (!transactionsResponse.ok || !tokensResponse.ok) {
-        throw new Error("Failed to fetch data from Etherscan API");
+      if (!transactionsResponse.ok) {
+        const errorData = await transactionsResponse.json().catch(() => ({}));
+        throw new Error(
+          errorData.error || "Failed to fetch transactions from Etherscan API"
+        );
+      }
+
+      if (!tokensResponse.ok) {
+        const errorData = await tokensResponse.json().catch(() => ({}));
+        throw new Error(
+          errorData.error ||
+            "Failed to fetch token transfers from Etherscan API"
+        );
       }
 
       const transactionsData = await transactionsResponse.json();
@@ -191,6 +206,11 @@ export default function EthereumCrawler() {
       setTransactions([]);
       setTokenTransfers([]);
       setBlockRange(null);
+      alert(
+        `Error: ${
+          error instanceof Error ? error.message : "Unknown error occurred"
+        }`
+      );
     } finally {
       setLoading(false);
     }
@@ -218,8 +238,10 @@ export default function EthereumCrawler() {
       });
 
       if (!balanceResponse.ok) {
+        const errorData = await balanceResponse.json().catch(() => ({}));
         throw new Error(
-          "Failed to fetch historical balance from Etherscan API"
+          errorData.error ||
+            "Failed to fetch historical balance from Etherscan API"
         );
       }
 
@@ -234,6 +256,12 @@ export default function EthereumCrawler() {
       }
     } catch (error) {
       console.error("Error fetching historical balance:", error);
+      setHistoricalBalance(null);
+      alert(
+        `Error: ${
+          error instanceof Error ? error.message : "Unknown error occurred"
+        }`
+      );
     } finally {
       setLoading(false);
     }

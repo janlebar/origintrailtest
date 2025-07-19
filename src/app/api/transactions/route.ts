@@ -1,13 +1,21 @@
-// Iused Axios because I used it before
+// Iused Axios because of better fetch
 
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "YourApiKeyToken";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const ETHERSCAN_BASE_URL = "https://api.etherscan.io/api";
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if API key is configured
+    if (!ETHERSCAN_API_KEY) {
+      return NextResponse.json(
+        { error: "Etherscan API key is not configured" },
+        { status: 500 }
+      );
+    }
+
     // Pridobimo podatke
     // Extract data from request
     const { walletAddress, startBlock, endBlock } = await request.json();
@@ -62,24 +70,51 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (
-      normalTxResponse.data.status === "0" &&
-      normalTxResponse.data.message !== "No transactions found"
-    ) {
-      console.error(
-        "Normal transactions API error:",
-        normalTxResponse.data.message
-      );
+    // Check for API errors and handle them gracefully
+    if (normalTxResponse.data.status === "0") {
+      if (normalTxResponse.data.message === "No transactions found") {
+        console.log("No normal transactions found for this address");
+      } else if (normalTxResponse.data.message === "NOTOK") {
+        console.error("Normal transactions API rate limit or invalid key");
+        return NextResponse.json(
+          { error: "Etherscan API rate limit exceeded or invalid API key" },
+          { status: 429 }
+        );
+      } else {
+        console.error(
+          "Normal transactions API error:",
+          normalTxResponse.data.message
+        );
+        return NextResponse.json(
+          {
+            error: `Normal transactions API error: ${normalTxResponse.data.message}`,
+          },
+          { status: 500 }
+        );
+      }
     }
 
-    if (
-      internalTxResponse.data.status === "0" &&
-      internalTxResponse.data.message !== "No transactions found"
-    ) {
-      console.error(
-        "Internal transactions API error:",
-        internalTxResponse.data.message
-      );
+    if (internalTxResponse.data.status === "0") {
+      if (internalTxResponse.data.message === "No transactions found") {
+        console.log("No internal transactions found for this address");
+      } else if (internalTxResponse.data.message === "NOTOK") {
+        console.error("Internal transactions API rate limit or invalid key");
+        return NextResponse.json(
+          { error: "Etherscan API rate limit exceeded or invalid API key" },
+          { status: 429 }
+        );
+      } else {
+        console.error(
+          "Internal transactions API error:",
+          internalTxResponse.data.message
+        );
+        return NextResponse.json(
+          {
+            error: `Internal transactions API error: ${internalTxResponse.data.message}`,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     const normalTransactions = Array.isArray(normalTxResponse.data.result)

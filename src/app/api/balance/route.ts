@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "YourApiKeyToken";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const ETHERSCAN_BASE_URL = "https://api.etherscan.io/api";
 
 export async function POST(request: NextRequest) {
@@ -15,60 +15,103 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if API key is configured
+    if (!ETHERSCAN_API_KEY) {
+      return NextResponse.json(
+        { error: "Etherscan API key is not configured" },
+        { status: 500 }
+      );
+    }
+
     const targetDate = new Date(date);
     targetDate.setUTCHours(0, 0, 0, 0);
     const targetTimestamp = Math.floor(targetDate.getTime() / 1000);
 
-    const currentBlockResponse = await axios.get(ETHERSCAN_BASE_URL, {
-      params: {
-        module: "proxy",
-        action: "eth_blockNumber",
-        apikey: ETHERSCAN_API_KEY,
-      },
-    });
+    // Get current block number with error handling
+    let currentBlockNumber: number;
+    try {
+      const currentBlockResponse = await axios.get(ETHERSCAN_BASE_URL, {
+        params: {
+          module: "proxy",
+          action: "eth_blockNumber",
+          apikey: ETHERSCAN_API_KEY,
+        },
+      });
 
-    if (!currentBlockResponse.data.result) {
-      throw new Error("Failed to get current block number");
+      if (!currentBlockResponse.data.result) {
+        throw new Error("Failed to get current block number");
+      }
+
+      currentBlockNumber = parseInt(currentBlockResponse.data.result, 16);
+    } catch (error) {
+      console.error("Error getting current block:", error);
+      return NextResponse.json(
+        { error: "Failed to get current block number from Etherscan" },
+        { status: 500 }
+      );
     }
 
-    const currentBlockNumber = parseInt(currentBlockResponse.data.result, 16);
+    // Get current block timestamp with error handling
+    let currentBlockTimestamp: number;
+    try {
+      const currentBlockData = await axios.get(ETHERSCAN_BASE_URL, {
+        params: {
+          module: "proxy",
+          action: "eth_getBlockByNumber",
+          tag: "0x" + currentBlockNumber.toString(16),
+          boolean: false,
+          apikey: ETHERSCAN_API_KEY,
+        },
+      });
 
-    const currentBlockData = await axios.get(ETHERSCAN_BASE_URL, {
-      params: {
-        module: "proxy",
-        action: "eth_getBlockByNumber",
-        tag: "0x" + currentBlockNumber.toString(16),
-        boolean: false,
-        apikey: ETHERSCAN_API_KEY,
-      },
-    });
+      if (!currentBlockData.data.result?.timestamp) {
+        throw new Error("Failed to get current block timestamp");
+      }
 
-    const currentBlockTimestamp = parseInt(
-      currentBlockData.data.result.timestamp,
-      16
-    );
+      currentBlockTimestamp = parseInt(
+        currentBlockData.data.result.timestamp,
+        16
+      );
+    } catch (error) {
+      console.error("Error getting current block timestamp:", error);
+      return NextResponse.json(
+        { error: "Failed to get current block timestamp from Etherscan" },
+        { status: 500 }
+      );
+    }
 
     if (targetTimestamp >= currentBlockTimestamp) {
-      const balance = await getBalanceAtBlock(
-        walletAddress,
-        currentBlockNumber
-      );
-      return NextResponse.json({
-        success: true,
-        balance,
-        block: currentBlockNumber,
-        timestamp: new Date(currentBlockTimestamp * 1000).toISOString(),
-        date: targetDate.toISOString().split("T")[0],
-        note: "Target date is in the future, showing current balance",
-      });
+      try {
+        const balance = await getBalanceAtBlock(
+          walletAddress,
+          currentBlockNumber
+        );
+        return NextResponse.json({
+          success: true,
+          balance,
+          block: currentBlockNumber,
+          timestamp: new Date(currentBlockTimestamp * 1000).toISOString(),
+          date: targetDate.toISOString().split("T")[0],
+          note: "Target date is in the future, showing current balance",
+        });
+      } catch (error) {
+        console.error("Error getting current balance:", error);
+        return NextResponse.json(
+          { error: "Failed to get current balance from Etherscan" },
+          { status: 500 }
+        );
+      }
     }
 
-    // Binary search
+    // Binary search with better error handling
     let low = 1;
     let high = currentBlockNumber;
     let closestBlock = currentBlockNumber;
+    let closestTimestamp = currentBlockTimestamp;
+    let attempts = 0;
+    const maxAttempts = 15; // Reduced to avoid too many API calls
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < maxAttempts; i++) {
       const mid = Math.floor((low + high) / 2);
 
       try {
@@ -82,15 +125,20 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        if (!blockData.data.result?.timestamp) {
+          console.warn(`Block ${mid} has no timestamp, skipping`);
+          continue;
+        }
+
         const blockTimestamp = parseInt(blockData.data.result.timestamp, 16);
 
+        // Update closest block if this one is closer
         if (
           Math.abs(blockTimestamp - targetTimestamp) <
-          Math.abs(
-            parseInt(await getBlockTimestamp(closestBlock)) - targetTimestamp
-          )
+          Math.abs(closestTimestamp - targetTimestamp)
         ) {
           closestBlock = mid;
+          closestTimestamp = blockTimestamp;
         }
 
         if (blockTimestamp < targetTimestamp) {
@@ -99,29 +147,49 @@ export async function POST(request: NextRequest) {
           high = mid - 1;
         }
 
+        // If we're within 1 hour of target, that's good enough
         if (Math.abs(blockTimestamp - targetTimestamp) < 3600) {
           break;
         }
+
+        attempts++;
       } catch (error) {
         console.warn(`Failed to get block ${mid}, continuing search`);
-        break;
+        // Skip this block and continue
+        if (mid < closestBlock) {
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+        continue;
       }
     }
 
-    // Get balance at the closest block
-    const balance = await getBalanceAtBlock(walletAddress, closestBlock);
-    const blockTimestamp = await getBlockTimestamp(closestBlock);
+    console.log(
+      `Binary search completed in ${attempts} attempts. Closest block: ${closestBlock}`
+    );
 
-    return NextResponse.json({
-      success: true,
-      balance,
-      block: closestBlock,
-      timestamp: new Date(parseInt(blockTimestamp) * 1000).toISOString(),
-      date: targetDate.toISOString().split("T")[0],
-      requestedTimestamp: targetTimestamp,
-      actualTimestamp: parseInt(blockTimestamp),
-      timeDifference: Math.abs(parseInt(blockTimestamp) - targetTimestamp),
-    });
+    // Get balance at the closest block
+    try {
+      const balance = await getBalanceAtBlock(walletAddress, closestBlock);
+
+      return NextResponse.json({
+        success: true,
+        balance,
+        block: closestBlock,
+        timestamp: new Date(closestTimestamp * 1000).toISOString(),
+        date: targetDate.toISOString().split("T")[0],
+        requestedTimestamp: targetTimestamp,
+        actualTimestamp: closestTimestamp,
+        timeDifference: Math.abs(closestTimestamp - targetTimestamp),
+      });
+    } catch (error) {
+      console.error("Failed to get balance for closest block:", error);
+      return NextResponse.json(
+        { error: "Failed to retrieve balance for the target date" },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error("Error fetching historical balance:", error);
 
@@ -165,19 +233,24 @@ async function getBalanceAtBlock(
 }
 
 async function getBlockTimestamp(blockNumber: number): Promise<string> {
-  const response = await axios.get(ETHERSCAN_BASE_URL, {
-    params: {
-      module: "proxy",
-      action: "eth_getBlockByNumber",
-      tag: "0x" + blockNumber.toString(16),
-      boolean: false,
-      apikey: ETHERSCAN_API_KEY,
-    },
-  });
+  try {
+    const response = await axios.get(ETHERSCAN_BASE_URL, {
+      params: {
+        module: "proxy",
+        action: "eth_getBlockByNumber",
+        tag: "0x" + blockNumber.toString(16),
+        boolean: false,
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
 
-  if (!response.data.result?.timestamp) {
+    if (!response.data.result?.timestamp) {
+      throw new Error("Failed to get block timestamp");
+    }
+
+    return parseInt(response.data.result.timestamp, 16).toString();
+  } catch (error) {
+    console.error(`Error getting timestamp for block ${blockNumber}:`, error);
     throw new Error("Failed to get block timestamp");
   }
-
-  return parseInt(response.data.result.timestamp, 16).toString();
 }

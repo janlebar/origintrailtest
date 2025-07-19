@@ -6,6 +6,14 @@ const ETHERSCAN_BASE_URL = "https://api.etherscan.io/api";
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if API key is configured
+    if (!ETHERSCAN_API_KEY) {
+      return NextResponse.json(
+        { error: "Etherscan API key is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { walletAddress, startBlock, endBlock } = await request.json();
 
     if (!walletAddress || !startBlock) {
@@ -60,24 +68,54 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (
-      tokenTransfersResponse.data.status === "0" &&
-      tokenTransfersResponse.data.message !== "No transactions found"
-    ) {
-      console.error(
-        "Token transfers API error:",
-        tokenTransfersResponse.data.message
-      );
+    // Check for API errors and handle them gracefully
+    if (tokenTransfersResponse.data.status === "0") {
+      if (tokenTransfersResponse.data.message === "No transactions found") {
+        console.log("No token transfers found for this address");
+      } else if (tokenTransfersResponse.data.message === "NOTOK") {
+        console.error("Token transfers API rate limit or invalid key");
+        return NextResponse.json(
+          { error: "Etherscan API rate limit exceeded or invalid API key" },
+          { status: 429 }
+        );
+      } else {
+        console.error(
+          "Token transfers API error:",
+          tokenTransfersResponse.data.message
+        );
+        return NextResponse.json(
+          {
+            error: `Token transfers API error: ${tokenTransfersResponse.data.message}`,
+          },
+          { status: 500 }
+        );
+      }
     }
 
-    if (
-      nftTransfersResponse.data.status === "0" &&
-      nftTransfersResponse.data.message !== "No transactions found"
-    ) {
-      console.error(
-        "NFT transfers API error:",
-        nftTransfersResponse.data.message
-      );
+    if (nftTransfersResponse.data.status === "0") {
+      if (nftTransfersResponse.data.message === "No transactions found") {
+        console.log("No NFT transfers found for this address");
+      } else if (
+        nftTransfersResponse.data.message === "NOTOK" ||
+        tokenTransfersResponse.data.message === "UnExpected Exception#1"
+      ) {
+        console.error("NFT transfers API rate limit or invalid key");
+        return NextResponse.json(
+          { error: "Etherscan API rate limit exceeded or invalid API key" },
+          { status: 429 }
+        );
+      } else {
+        console.error(
+          "NFT transfers API error:",
+          nftTransfersResponse.data.message
+        );
+        return NextResponse.json(
+          {
+            error: `NFT transfers API error: ${nftTransfersResponse.data.message}`,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     const tokenTransfers = Array.isArray(tokenTransfersResponse.data.result)
