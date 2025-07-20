@@ -1,10 +1,39 @@
-// Iused Axios because of better fetch
-
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const ETHERSCAN_BASE_URL = "https://api.etherscan.io/api";
+
+// Type definitions for Etherscan API responses
+interface TransactionResponse {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  blockNumber: string;
+  timeStamp: string;
+  gas: string;
+  gasPrice: string;
+  gasUsed: string;
+  isError: string;
+  methodId?: string;
+  input?: string;
+}
+
+interface FormattedTransaction {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  block: number;
+  timestamp: string;
+  gas: string;
+  gasPrice: string;
+  gasUsed: string;
+  type: "in" | "out";
+  isError: boolean;
+  methodId?: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +45,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Pridobimo podatke
     // Extract data from request
     const { walletAddress, startBlock, endBlock } = await request.json();
 
@@ -118,45 +146,32 @@ export async function POST(request: NextRequest) {
     }
 
     const normalTransactions = Array.isArray(normalTxResponse.data.result)
-      ? normalTxResponse.data.result
+      ? (normalTxResponse.data.result as TransactionResponse[])
       : [];
     const internalTransactions = Array.isArray(internalTxResponse.data.result)
-      ? internalTxResponse.data.result
+      ? (internalTxResponse.data.result as TransactionResponse[])
       : [];
 
-    const allTransactions = [...normalTransactions, ...internalTransactions]
-      .map(
-        (tx: {
-          hash: string;
-          from: string;
-          to: string;
-          value: string;
-          blockNumber: string;
-          timeStamp: string;
-          gas: string;
-          gasPrice: string;
-          gasUsed: string;
-          isError: string;
-          methodId?: string;
-          input?: string;
-        }) => ({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to,
-          value: (parseInt(tx.value) / 1e18).toFixed(6),
-          block: parseInt(tx.blockNumber),
-          timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
-          gas: tx.gas,
-          gasPrice: tx.gasPrice
-            ? (parseInt(tx.gasPrice) / 1e9).toFixed(2)
-            : "0",
-          gasUsed: tx.gasUsed,
-          type:
-            tx.to?.toLowerCase() === walletAddress.toLowerCase() ? "in" : "out",
-          isError: tx.isError === "1",
-          methodId: tx.methodId || tx.input?.slice(0, 10),
-        })
-      )
+    const allTransactions: FormattedTransaction[] = [
+      ...normalTransactions,
+      ...internalTransactions,
+    ]
+      .map((tx: TransactionResponse) => ({
+        hash: tx.hash,
+        from: tx.from,
+        to: tx.to,
+        value: (parseInt(tx.value) / 1e18).toFixed(6),
+        block: parseInt(tx.blockNumber),
+        timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+        gas: tx.gas,
+        gasPrice: tx.gasPrice ? (parseInt(tx.gasPrice) / 1e9).toFixed(2) : "0",
+        gasUsed: tx.gasUsed,
+        type: (tx.to?.toLowerCase() === walletAddress.toLowerCase()
+          ? "in"
+          : "out") as "in" | "out",
+        isError: tx.isError === "1",
+        methodId: tx.methodId || tx.input?.slice(0, 10),
+      }))
       .sort((a, b) => b.block - a.block);
 
     const uniqueTransactions = allTransactions.filter(

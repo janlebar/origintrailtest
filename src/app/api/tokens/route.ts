@@ -4,6 +4,58 @@ import axios from "axios";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const ETHERSCAN_BASE_URL = "https://api.etherscan.io/api";
 
+// Type definitions for Etherscan API responses
+interface TokenTransferResponse {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  tokenSymbol: string;
+  tokenName: string;
+  contractAddress: string;
+  blockNumber: string;
+  timeStamp: string;
+  tokenDecimal: string;
+}
+
+interface NftTransferResponse {
+  hash: string;
+  from: string;
+  to: string;
+  tokenSymbol: string;
+  tokenName: string;
+  contractAddress: string;
+  blockNumber: string;
+  timeStamp: string;
+  tokenID: string;
+}
+
+interface FormattedTransfer {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  tokenSymbol: string;
+  tokenName: string;
+  contractAddress: string;
+  block: number;
+  timestamp: string;
+  type: string;
+  direction: "in" | "out";
+  tokenDecimal?: number;
+  tokenId?: string;
+}
+
+interface TokenSummary {
+  contractAddress: string;
+  tokenSymbol: string;
+  tokenName: string;
+  type: string;
+  totalTransfers: number;
+  totalIn: number;
+  totalOut: number;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check if API key is configured
@@ -97,7 +149,7 @@ export async function POST(request: NextRequest) {
         console.log("No NFT transfers found for this address");
       } else if (
         nftTransfersResponse.data.message === "NOTOK" ||
-        tokenTransfersResponse.data.message === "UnExpected Exception#1"
+        nftTransfersResponse.data.message === "UnExpected Exception#1"
       ) {
         console.error("NFT transfers API rate limit or invalid key");
         return NextResponse.json(
@@ -119,26 +171,15 @@ export async function POST(request: NextRequest) {
     }
 
     const tokenTransfers = Array.isArray(tokenTransfersResponse.data.result)
-      ? tokenTransfersResponse.data.result
+      ? (tokenTransfersResponse.data.result as TokenTransferResponse[])
       : [];
     const nftTransfers = Array.isArray(nftTransfersResponse.data.result)
-      ? nftTransfersResponse.data.result
+      ? (nftTransfersResponse.data.result as NftTransferResponse[])
       : [];
 
     // Format ERC-20 token transfers
-    const formattedTokenTransfers = tokenTransfers.map(
-      (transfer: {
-        hash: string;
-        from: string;
-        to: string;
-        value: string;
-        tokenSymbol: string;
-        tokenName: string;
-        contractAddress: string;
-        blockNumber: string;
-        timeStamp: string;
-        tokenDecimal: string;
-      }) => {
+    const formattedTokenTransfers: FormattedTransfer[] = tokenTransfers.map(
+      (transfer: TokenTransferResponse) => {
         const decimals = parseInt(transfer.tokenDecimal) || 18;
         const value = transfer.value
           ? parseInt(transfer.value) / Math.pow(10, decimals)
@@ -166,18 +207,9 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const formattedNftTransfers = nftTransfers.map(
-      (transfer: {
-        hash: string;
-        from: string;
-        to: string;
-        tokenSymbol: string;
-        tokenName: string;
-        contractAddress: string;
-        blockNumber: string;
-        timeStamp: string;
-        tokenID: string;
-      }) => ({
+    // Format ERC-721 NFT transfers
+    const formattedNftTransfers: FormattedTransfer[] = nftTransfers.map(
+      (transfer: NftTransferResponse) => ({
         hash: transfer.hash,
         from: transfer.from,
         to: transfer.to,
@@ -212,21 +244,7 @@ export async function POST(request: NextRequest) {
     );
 
     const tokenSummary = uniqueTransfers.reduce(
-      (
-        acc: Record<
-          string,
-          {
-            contractAddress: string;
-            tokenSymbol: string;
-            tokenName: string;
-            type: string;
-            totalTransfers: number;
-            totalIn: number;
-            totalOut: number;
-          }
-        >,
-        transfer
-      ) => {
+      (acc: Record<string, TokenSummary>, transfer: FormattedTransfer) => {
         const key = transfer.contractAddress;
         if (!acc[key]) {
           acc[key] = {
