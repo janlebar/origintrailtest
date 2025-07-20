@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import axios from "axios";
 
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;

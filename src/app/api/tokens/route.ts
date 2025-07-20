@@ -126,48 +126,75 @@ export async function POST(request: NextRequest) {
       : [];
 
     // Format ERC-20 token transfers
-    const formattedTokenTransfers = tokenTransfers.map((transfer: any) => {
-      const decimals = parseInt(transfer.tokenDecimal) || 18;
-      const value = transfer.value
-        ? parseInt(transfer.value) / Math.pow(10, decimals)
-        : 0;
+    const formattedTokenTransfers = tokenTransfers.map(
+      (transfer: {
+        hash: string;
+        from: string;
+        to: string;
+        value: string;
+        tokenSymbol: string;
+        tokenName: string;
+        contractAddress: string;
+        blockNumber: string;
+        timeStamp: string;
+        tokenDecimal: string;
+      }) => {
+        const decimals = parseInt(transfer.tokenDecimal) || 18;
+        const value = transfer.value
+          ? parseInt(transfer.value) / Math.pow(10, decimals)
+          : 0;
 
-      return {
+        return {
+          hash: transfer.hash,
+          from: transfer.from,
+          to: transfer.to,
+          value: value.toFixed(6),
+          tokenSymbol: transfer.tokenSymbol,
+          tokenName: transfer.tokenName,
+          contractAddress: transfer.contractAddress,
+          block: parseInt(transfer.blockNumber),
+          timestamp: new Date(
+            parseInt(transfer.timeStamp) * 1000
+          ).toISOString(),
+          type: "ERC-20",
+          tokenDecimal: decimals,
+          direction:
+            transfer.to?.toLowerCase() === walletAddress.toLowerCase()
+              ? "in"
+              : "out",
+        };
+      }
+    );
+
+    const formattedNftTransfers = nftTransfers.map(
+      (transfer: {
+        hash: string;
+        from: string;
+        to: string;
+        tokenSymbol: string;
+        tokenName: string;
+        contractAddress: string;
+        blockNumber: string;
+        timeStamp: string;
+        tokenID: string;
+      }) => ({
         hash: transfer.hash,
         from: transfer.from,
         to: transfer.to,
-        value: value.toFixed(6),
+        value: "1",
         tokenSymbol: transfer.tokenSymbol,
         tokenName: transfer.tokenName,
         contractAddress: transfer.contractAddress,
         block: parseInt(transfer.blockNumber),
         timestamp: new Date(parseInt(transfer.timeStamp) * 1000).toISOString(),
-        type: "ERC-20",
-        tokenDecimal: decimals,
+        type: "ERC-721",
+        tokenId: transfer.tokenID,
         direction:
           transfer.to?.toLowerCase() === walletAddress.toLowerCase()
             ? "in"
             : "out",
-      };
-    });
-
-    const formattedNftTransfers = nftTransfers.map((transfer: any) => ({
-      hash: transfer.hash,
-      from: transfer.from,
-      to: transfer.to,
-      value: "1",
-      tokenSymbol: transfer.tokenSymbol,
-      tokenName: transfer.tokenName,
-      contractAddress: transfer.contractAddress,
-      block: parseInt(transfer.blockNumber),
-      timestamp: new Date(parseInt(transfer.timeStamp) * 1000).toISOString(),
-      type: "ERC-721",
-      tokenId: transfer.tokenID,
-      direction:
-        transfer.to?.toLowerCase() === walletAddress.toLowerCase()
-          ? "in"
-          : "out",
-    }));
+      })
+    );
 
     const allTransfers = [
       ...formattedTokenTransfers,
@@ -184,30 +211,47 @@ export async function POST(request: NextRequest) {
         )
     );
 
-    const tokenSummary = uniqueTransfers.reduce((acc: any, transfer) => {
-      const key = transfer.contractAddress;
-      if (!acc[key]) {
-        acc[key] = {
-          contractAddress: transfer.contractAddress,
-          tokenSymbol: transfer.tokenSymbol,
-          tokenName: transfer.tokenName,
-          type: transfer.type,
-          totalTransfers: 0,
-          totalIn: 0,
-          totalOut: 0,
-        };
-      }
+    const tokenSummary = uniqueTransfers.reduce(
+      (
+        acc: Record<
+          string,
+          {
+            contractAddress: string;
+            tokenSymbol: string;
+            tokenName: string;
+            type: string;
+            totalTransfers: number;
+            totalIn: number;
+            totalOut: number;
+          }
+        >,
+        transfer
+      ) => {
+        const key = transfer.contractAddress;
+        if (!acc[key]) {
+          acc[key] = {
+            contractAddress: transfer.contractAddress,
+            tokenSymbol: transfer.tokenSymbol,
+            tokenName: transfer.tokenName,
+            type: transfer.type,
+            totalTransfers: 0,
+            totalIn: 0,
+            totalOut: 0,
+          };
+        }
 
-      acc[key].totalTransfers += 1;
+        acc[key].totalTransfers += 1;
 
-      if (transfer.direction === "in") {
-        acc[key].totalIn += parseFloat(transfer.value);
-      } else {
-        acc[key].totalOut += parseFloat(transfer.value);
-      }
+        if (transfer.direction === "in") {
+          acc[key].totalIn += parseFloat(transfer.value);
+        } else {
+          acc[key].totalOut += parseFloat(transfer.value);
+        }
 
-      return acc;
-    }, {});
+        return acc;
+      },
+      {}
+    );
 
     return NextResponse.json({
       success: true,

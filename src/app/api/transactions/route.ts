@@ -125,21 +125,38 @@ export async function POST(request: NextRequest) {
       : [];
 
     const allTransactions = [...normalTransactions, ...internalTransactions]
-      .map((tx: any) => ({
-        hash: tx.hash,
-        from: tx.from,
-        to: tx.to,
-        value: (parseInt(tx.value) / 1e18).toFixed(6),
-        block: parseInt(tx.blockNumber),
-        timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
-        gas: tx.gas,
-        gasPrice: tx.gasPrice ? (parseInt(tx.gasPrice) / 1e9).toFixed(2) : "0",
-        gasUsed: tx.gasUsed,
-        type:
-          tx.to?.toLowerCase() === walletAddress.toLowerCase() ? "in" : "out",
-        isError: tx.isError === "1",
-        methodId: tx.methodId || tx.input?.slice(0, 10),
-      }))
+      .map(
+        (tx: {
+          hash: string;
+          from: string;
+          to: string;
+          value: string;
+          blockNumber: string;
+          timeStamp: string;
+          gas: string;
+          gasPrice: string;
+          gasUsed: string;
+          isError: string;
+          methodId?: string;
+          input?: string;
+        }) => ({
+          hash: tx.hash,
+          from: tx.from,
+          to: tx.to,
+          value: (parseInt(tx.value) / 1e18).toFixed(6),
+          block: parseInt(tx.blockNumber),
+          timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+          gas: tx.gas,
+          gasPrice: tx.gasPrice
+            ? (parseInt(tx.gasPrice) / 1e9).toFixed(2)
+            : "0",
+          gasUsed: tx.gasUsed,
+          type:
+            tx.to?.toLowerCase() === walletAddress.toLowerCase() ? "in" : "out",
+          isError: tx.isError === "1",
+          methodId: tx.methodId || tx.input?.slice(0, 10),
+        })
+      )
       .sort((a, b) => b.block - a.block);
 
     const uniqueTransactions = allTransactions.filter(
