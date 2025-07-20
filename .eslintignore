@@ -1,0 +1,15 @@
+# Ignore build artifacts
+.next/
+out/
+dist/
+
+# Ignore node modules
+node_modules/
+
+# Ignore environment files
+.env*
+!.env.example
+
+# Ignore specific problematic files if needed
+# src/app/api/tokens/route.ts
+# src/app/api/transactions/route.ts 

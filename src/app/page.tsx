@@ -35,7 +35,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-// Validacija z uporabo Yod KNJIŽNICE
+// Validacija z uporabo zod KNJIŽNICE
 const walletFormSchema = z.object({
   walletAddress: z
     .string()
@@ -150,39 +150,56 @@ export default function EthereumCrawler() {
         }),
       });
 
+      // Handle transactions response
       if (!transactionsResponse.ok) {
         const errorData = await transactionsResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || "Failed to fetch transactions from Etherscan API"
-        );
+        const errorMessage =
+          errorData.error || "Failed to fetch transactions from Etherscan API";
+
+        if (errorMessage.includes("rate limit")) {
+          alert(
+            "⚠️ Rate limit exceeded! Please wait a moment and try again. Etherscan has a limit of 5 requests per second for free accounts."
+          );
+        } else {
+          alert(`Error fetching transactions: ${errorMessage}`);
+        }
+        setTransactions([]);
+      } else {
+        const transactionsData = await transactionsResponse.json();
+        if (transactionsData.success) {
+          setTransactions(transactionsData.transactions || []);
+          setBlockRange(transactionsData.blockRange);
+        } else {
+          console.error("Transactions API error:", transactionsData.error);
+          setTransactions([]);
+          alert(`Error fetching transactions: ${transactionsData.error}`);
+        }
       }
 
+      // Handle tokens response
       if (!tokensResponse.ok) {
         const errorData = await tokensResponse.json().catch(() => ({}));
-        throw new Error(
+        const errorMessage =
           errorData.error ||
-            "Failed to fetch token transfers from Etherscan API"
-        );
-      }
+          "Failed to fetch token transfers from Etherscan API";
 
-      const transactionsData = await transactionsResponse.json();
-      const tokensData = await tokensResponse.json();
-
-      if (transactionsData.success) {
-        setTransactions(transactionsData.transactions || []);
-        setBlockRange(transactionsData.blockRange);
-      } else {
-        console.error("Transactions API error:", transactionsData.error);
-        setTransactions([]);
-        alert(`Error fetching transactions: ${transactionsData.error}`);
-      }
-
-      if (tokensData.success) {
-        setTokenTransfers(tokensData.transfers || []);
-      } else {
-        console.error("Tokens API error:", tokensData.error);
+        if (errorMessage.includes("rate limit")) {
+          alert(
+            "⚠️ Rate limit exceeded! Please wait a moment and try again. Etherscan has a limit of 5 requests per second for free accounts."
+          );
+        } else {
+          alert(`Error fetching token transfers: ${errorMessage}`);
+        }
         setTokenTransfers([]);
-        alert(`Error fetching token transfers: ${tokensData.error}`);
+      } else {
+        const tokensData = await tokensResponse.json();
+        if (tokensData.success) {
+          setTokenTransfers(tokensData.transfers || []);
+        } else {
+          console.error("Tokens API error:", tokensData.error);
+          setTokenTransfers([]);
+          alert(`Error fetching token transfers: ${tokensData.error}`);
+        }
       }
     } catch (error) {
       console.error("Error fetching transactions:", error);
@@ -190,11 +207,16 @@ export default function EthereumCrawler() {
       setTransactions([]);
       setTokenTransfers([]);
       setBlockRange(null);
-      alert(
-        `Error: ${
-          error instanceof Error ? error.message : "Unknown error occurred"
-        }`
-      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("rate limit")) {
+        alert(
+          "⚠️ Rate limit exceeded! Please wait a moment and try again. Etherscan has a limit of 5 requests per second for free accounts."
+        );
+      } else {
+        alert(`Error: ${errorMessage}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -223,20 +245,28 @@ export default function EthereumCrawler() {
 
       if (!balanceResponse.ok) {
         const errorData = await balanceResponse.json().catch(() => ({}));
-        throw new Error(
+        const errorMessage =
           errorData.error ||
-            "Failed to fetch historical balance from Etherscan API"
-        );
-      }
+          "Failed to fetch historical balance from Etherscan API";
 
-      const balanceData = await balanceResponse.json();
-
-      if (balanceData.success) {
-        setHistoricalBalance(balanceData.balance);
-      } else {
-        console.error("Balance API error:", balanceData.error);
+        if (errorMessage.includes("rate limit")) {
+          alert(
+            "⚠️ Rate limit exceeded! Please wait a moment and try again. Etherscan has a limit of 5 requests per second for free accounts."
+          );
+        } else {
+          alert(`Error fetching historical balance: ${errorMessage}`);
+        }
         setHistoricalBalance(null);
-        alert(`Error fetching historical balance: ${balanceData.error}`);
+      } else {
+        const balanceData = await balanceResponse.json();
+
+        if (balanceData.success) {
+          setHistoricalBalance(balanceData.balance);
+        } else {
+          console.error("Balance API error:", balanceData.error);
+          setHistoricalBalance(null);
+          alert(`Error fetching historical balance: ${balanceData.error}`);
+        }
       }
     } catch (error) {
       console.error("Error fetching historical balance:", error);

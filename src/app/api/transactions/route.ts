@@ -1,3 +1,5 @@
+// Iused Axios because of better fetch
+
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
@@ -45,6 +47,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Pridobimo podatke
     // Extract data from request
     const { walletAddress, startBlock, endBlock } = await request.json();
 
@@ -65,6 +68,21 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // Check for API errors
+      if (blockResponse.data.status === "0") {
+        if (blockResponse.data.message === "NOTOK") {
+          console.error("API rate limit exceeded getting current block");
+          return NextResponse.json(
+            {
+              error:
+                "Etherscan API rate limit exceeded. Please try again later.",
+            },
+            { status: 429 }
+          );
+        }
+        throw new Error(`API error: ${blockResponse.data.message}`);
+      }
+
       if (blockResponse.data.result) {
         currentBlock = parseInt(blockResponse.data.result, 16).toString();
       }
@@ -78,11 +96,14 @@ export async function POST(request: NextRequest) {
         startblock: startBlock,
         endblock: currentBlock,
         page: 1,
-        offset: 10000,
+        offset: 5000,
         sort: "desc",
         apikey: ETHERSCAN_API_KEY,
       },
     });
+
+    // Add delay between API calls to avoid rate limits
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const internalTxResponse = await axios.get(ETHERSCAN_BASE_URL, {
       params: {
@@ -92,7 +113,7 @@ export async function POST(request: NextRequest) {
         startblock: startBlock,
         endblock: currentBlock,
         page: 1,
-        offset: 10000,
+        offset: 5000,
         sort: "desc",
         apikey: ETHERSCAN_API_KEY,
       },

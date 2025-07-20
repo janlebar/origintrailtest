@@ -38,6 +38,21 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // Check for API errors
+      if (currentBlockResponse.data.status === "0") {
+        if (currentBlockResponse.data.message === "NOTOK") {
+          console.error("API rate limit exceeded getting current block");
+          return NextResponse.json(
+            {
+              error:
+                "Etherscan API rate limit exceeded. Please try again later.",
+            },
+            { status: 429 }
+          );
+        }
+        throw new Error(`API error: ${currentBlockResponse.data.message}`);
+      }
+
       if (!currentBlockResponse.data.result) {
         throw new Error("Failed to get current block number");
       }
@@ -63,6 +78,23 @@ export async function POST(request: NextRequest) {
           apikey: ETHERSCAN_API_KEY,
         },
       });
+
+      // Check for API errors
+      if (currentBlockData.data.status === "0") {
+        if (currentBlockData.data.message === "NOTOK") {
+          console.error(
+            "API rate limit exceeded getting current block timestamp"
+          );
+          return NextResponse.json(
+            {
+              error:
+                "Etherscan API rate limit exceeded. Please try again later.",
+            },
+            { status: 429 }
+          );
+        }
+        throw new Error(`API error: ${currentBlockData.data.message}`);
+      }
 
       if (!currentBlockData.data.result?.timestamp) {
         throw new Error("Failed to get current block timestamp");
@@ -94,8 +126,8 @@ export async function POST(request: NextRequest) {
           date: targetDate.toISOString().split("T")[0],
           note: "Target date is in the future, showing current balance",
         });
-      } catch (error) {
-        console.error("Error getting current balance:", error);
+      } catch {
+        console.error("Error getting current balance");
         return NextResponse.json(
           { error: "Failed to get current balance from Etherscan" },
           { status: 500 }
@@ -103,13 +135,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Binary search with better error handling
+    // Optimized binary search with rate limit handling
     let low = 1;
     let high = currentBlockNumber;
     let closestBlock = currentBlockNumber;
     let closestTimestamp = currentBlockTimestamp;
     let attempts = 0;
-    const maxAttempts = 15; // Reduced to avoid too many API calls
+    const maxAttempts = 8; // Further reduced to avoid rate limits
 
     for (let i = 0; i < maxAttempts; i++) {
       const mid = Math.floor((low + high) / 2);
@@ -124,6 +156,22 @@ export async function POST(request: NextRequest) {
             apikey: ETHERSCAN_API_KEY,
           },
         });
+
+        // Check for API errors
+        if (blockData.data.status === "0") {
+          if (blockData.data.message === "NOTOK") {
+            console.error("API rate limit exceeded during binary search");
+            return NextResponse.json(
+              {
+                error:
+                  "Etherscan API rate limit exceeded. Please try again later.",
+              },
+              { status: 429 }
+            );
+          }
+          console.warn(`Block ${mid} API error: ${blockData.data.message}`);
+          continue;
+        }
 
         if (!blockData.data.result?.timestamp) {
           console.warn(`Block ${mid} has no timestamp, skipping`);
@@ -147,12 +195,15 @@ export async function POST(request: NextRequest) {
           high = mid - 1;
         }
 
-        // If we're within 1 hour of target, that's good enough
-        if (Math.abs(blockTimestamp - targetTimestamp) < 3600) {
+        // If we're within 2 hours of target, that's good enough
+        if (Math.abs(blockTimestamp - targetTimestamp) < 7200) {
           break;
         }
 
         attempts++;
+
+        // Add small delay to avoid rate limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (error) {
         console.warn(`Failed to get block ${mid}, continuing search`);
         // Skip this block and continue
@@ -183,8 +234,8 @@ export async function POST(request: NextRequest) {
         actualTimestamp: closestTimestamp,
         timeDifference: Math.abs(closestTimestamp - targetTimestamp),
       });
-    } catch (error) {
-      console.error("Failed to get balance for closest block:", error);
+    } catch {
+      console.error("Failed to get balance for closest block");
       return NextResponse.json(
         { error: "Failed to retrieve balance for the target date" },
         { status: 500 }
@@ -221,6 +272,14 @@ async function getBalanceAtBlock(
     },
   });
 
+  // Check for API errors
+  if (response.data.status === "0") {
+    if (response.data.message === "NOTOK") {
+      throw new Error("Etherscan API rate limit exceeded");
+    }
+    throw new Error(`API error: ${response.data.message}`);
+  }
+
   if (!response.data.result) {
     throw new Error("Failed to get balance");
   }
@@ -230,27 +289,4 @@ async function getBalanceAtBlock(
   const balanceEth = (parseInt(balanceWei) / 1e18).toFixed(8);
 
   return balanceEth;
-}
-
-async function getBlockTimestamp(blockNumber: number): Promise<string> {
-  try {
-    const response = await axios.get(ETHERSCAN_BASE_URL, {
-      params: {
-        module: "proxy",
-        action: "eth_getBlockByNumber",
-        tag: "0x" + blockNumber.toString(16),
-        boolean: false,
-        apikey: ETHERSCAN_API_KEY,
-      },
-    });
-
-    if (!response.data.result?.timestamp) {
-      throw new Error("Failed to get block timestamp");
-    }
-
-    return parseInt(response.data.result.timestamp, 16).toString();
-  } catch (error) {
-    console.error(`Error getting timestamp for block ${blockNumber}:`, error);
-    throw new Error("Failed to get block timestamp");
-  }
 }
