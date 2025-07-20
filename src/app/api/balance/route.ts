@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
         currentBlockData.data.result.timestamp,
         16
       );
-    } catch (error) {
-      console.error("Error getting current block timestamp:", error);
+    } catch {
+      console.error("Error getting current block timestamp");
       return NextResponse.json(
         { error: "Failed to get current block timestamp from Etherscan" },
         { status: 500 }
